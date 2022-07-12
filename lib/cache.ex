@@ -90,12 +90,6 @@ defmodule Cache do
       :exit, res ->
         {:error, res}
   end
-  # def register_function(fun, key, ttl, refresh_interval)
-  #     when is_function(fun, 0) and is_integer(ttl) and ttl > 0 and
-  #            is_integer(refresh_interval) and refresh_interval > 0 and
-  #            refresh_interval < ttl do
-
-  # end
 
   def register_function(_fun, _key, _ttl, _refresh_interval) do
     {:error, :unexpected_value}
