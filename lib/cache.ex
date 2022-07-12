@@ -228,8 +228,13 @@ defmodule Cache.Store do
   Initialize a ets table to store `key` and `pid` of cache server
   """
   def init() do
-    :ets.new(:cache_table, [:set, :public, :named_table, read_concurrency: true])
-    :ok
+    case :ets.whereis :cache_table do
+      :undefined ->
+        :ets.new(:cache_table, [:set, :public, :named_table, read_concurrency: true])
+        :ok
+      _ ->
+        :ok
+    end
   end
 
   @doc ~s"""
