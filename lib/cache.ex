@@ -14,7 +14,7 @@ defmodule Cache do
   """
   @spec start_link(opts :: Keyword.t()) :: {atom, pid}
   def start_link(opts \\ []) when is_list(opts) do
-    GenServer.start_link(__MODULE__, [], opts)
+    GenServer.start_link(__MODULE__, [], opts ++ [name: __MODULE__])
   end
 
   @doc ~s"""
@@ -81,20 +81,21 @@ defmodule Cache do
       when is_function(fun, 0) and is_integer(ttl) and ttl > 0 and
              is_integer(refresh_interval) and refresh_interval > 0 and
              refresh_interval < ttl do
-    case :ets.lookup(:cache_table, key) do
-      [] ->
-        {:ok, pid} = Cache.start_link(fun, ttl, refresh_interval)
-        GenServer.call(pid, :register)
-        Cache.Store.store(key, pid)
-        :ok
-      _ ->
-        {:error, :already_registered}
-    end
+    GenServer.call(__MODULE__, {:register_function, fun, key, ttl, refresh_interval})
     catch
-      # Receive error
-      {:exit, _}->
-        {:error, :error}
+      # Receive :timeout
+      :exit, {:timeout, _} ->
+        {:error, :timeout}
+      #Other error
+      :exit, res ->
+        {:error, res}
   end
+  # def register_function(fun, key, ttl, refresh_interval)
+  #     when is_function(fun, 0) and is_integer(ttl) and ttl > 0 and
+  #            is_integer(refresh_interval) and refresh_interval > 0 and
+  #            refresh_interval < ttl do
+
+  # end
 
   def register_function(_fun, _key, _ttl, _refresh_interval) do
     {:error, :unexpected_value}
@@ -118,19 +119,44 @@ defmodule Cache do
   """
   @spec get(any(), non_neg_integer(), Keyword.t()) :: result
   def get(key, timeout \\ 30_000, _opts \\ []) when is_integer(timeout) and timeout > 0 do
-    case :ets.lookup(:cache_table, key) do
-      [] ->
-        {:error, :not_registered}
-      [{_key, pid}] ->
-        GenServer.call(pid, :get, timeout)
-    end
+    GenServer.call(__MODULE__, {:get, key}, timeout)
     catch
       # Receive :timeout
       :exit, {:timeout, _} ->
         {:error, :timeout}
-      # Receive other error
-      {:exit, _}->
-        {:error, :error}
+      #Other error
+      :exit, res ->
+        {:error, res}
+  end
+
+  def handle_call({:register_function, fun, key, ttl, refresh_interval}, _from, state) do
+    reply =
+      case :ets.lookup(:cache_table, key) do
+        [] ->
+          {:ok, pid} = Cache.start_link(fun, ttl, refresh_interval)
+          GenServer.call(pid, :register)
+          Cache.Store.store(key, pid)
+          :ok
+        _ ->
+          {:error, :already_registered}
+      end
+
+    {:reply, reply, state}
+  end
+
+  def handle_call({:get, key}, from ,state) do
+    case :ets.lookup(:cache_table, key) do
+      [] ->
+        {:reply, {:error, :not_registered}, state}
+      [{_key, pid}] ->
+        GenServer.cast(pid, {:get, from})
+        {:noreply, state}
+    end
+
+    catch
+      # Receive :timeout
+      :exit, {:timeout, _} ->
+        {:reply, {:error, :timeout}, state}
   end
 
   @doc ~s"""
@@ -147,29 +173,30 @@ defmodule Cache do
     {:reply, :ok, %{state | progress: true, ttl_ref: ref}}
   end
 
-  # Receives :get call message
+  # Receives :get cast message
   # Returns {:error, :not_registered}
   @impl true
-  def handle_call(:get, _from, %{value: nil, progress: nil} = state) do
-    {:reply, {:error, :not_registered}, state}
+  def handle_cast({:get, from}, %{value: nil, progress: nil} = state) do
+    GenServer.reply(from, {:error, :not_registered})
+    {:noreply, state}
   end
 
-  # Receives :get call message
+  # Receives :get cast message
   # Waits for computing value
   @impl true
-  def handle_call(:get, from, %{value: nil} = state) do
+  def handle_cast({:get, from},  %{value: nil} = state) do
     # wating result
     #IO.puts("Got get func for key #from #{inspect(from)}| wating result")
     {:noreply, %{state | waiting_result: from}}
   end
 
-  # Receives :get call message
+  # Receives :get cast message
   # Returns stored value
   @impl true
-  def handle_call(:get, _from, %{value: value} = state) do
-    {:reply, {:ok, value}, state}
+  def handle_cast({:get, from},  %{value: value} = state) do
+    GenServer.reply(from, {:ok, value})
+    {:noreply, state}
   end
-
 
   # Receive :recompute for `refresh_interval`
   # Start a Task for process `fun`
