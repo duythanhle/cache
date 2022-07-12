@@ -1,6 +1,6 @@
 # Cache
 
-To start the server: `iex -S mix run`
+To start the server: `iex -S mix`
 
 Examples testcases:
   ```elixir
