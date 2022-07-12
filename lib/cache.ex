@@ -146,11 +146,6 @@ defmodule Cache do
         GenServer.cast(pid, {:get, from})
         {:noreply, state}
     end
-
-    catch
-      # Receive :timeout
-      :exit, {:timeout, _} ->
-        {:reply, {:error, :timeout}, state}
   end
 
   @doc ~s"""
