@@ -52,7 +52,7 @@ To call from other terminal:
   iex(bar@local)5> Cache.get "key"
   {:ok, 1657678973}
   iex(bar@local)6> Cache.get "key1"
-  {:error, :not_registered
+  {:error, :not_registered}
   ```
 
 
