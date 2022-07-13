@@ -9,7 +9,7 @@ Examples testcases:
   Cache.get("key")
   ```
   ```bash
-  thanhle@local cache % iex -S mix run                                   
+  thanhle@local cache % iex -S mix                                   
   Erlang/OTP 25 [erts-13.0] [source] [64-bit] [smp:8:8] [ds:8:8:10] [async-threads:1] [jit] [dtrace]
 
   Interactive Elixir (1.13.4) - press Ctrl+C to exit (type h() ENTER for help)
@@ -37,7 +37,7 @@ To call from other terminal:
   ```
 
   ```bash
-  thanhle@local cache % iex --sname bar -S mix run
+  thanhle@local cache % iex --sname bar -S mix
   Erlang/OTP 25 [erts-13.0] [source] [64-bit] [smp:8:8] [ds:8:8:10] [async-threads:1] [jit] [dtrace]
 
   Interactive Elixir (1.13.4) - press Ctrl+C to exit (type h() ENTER for help)
