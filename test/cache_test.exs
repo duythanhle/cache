@@ -77,11 +77,4 @@ defmodule CacheTest do
     Enum.map(1..100_000, &(Cache.register_function(fn -> Process.sleep(1000); {:ok, System.os_time(:second)} end, &1, 10000, 1)))
     assert Cache.get(100) == {:ok, System.os_time(:second)}
   end
-
-  test "get concurrent" do
-    start_supervised(Cache)
-    Enum.map(1..100_000, &(Cache.register_function(fn -> Process.sleep(1000); {:ok, System.os_time(:second)} end, &1, 10000, 1)))
-    assert Cache.get(100) == Cache.get(10000)
-  end
-
 end
