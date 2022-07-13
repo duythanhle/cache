@@ -14,7 +14,7 @@ defmodule Cache do
   """
   @spec start_link(opts :: Keyword.t()) :: {atom, pid}
   def start_link(opts \\ []) when is_list(opts) do
-    GenServer.start_link(__MODULE__, [], opts ++ [name: __MODULE__])
+    GenServer.start_link(__MODULE__, [], opts ++ [name: {:global,__MODULE__}])
   end
 
   @doc ~s"""
@@ -81,7 +81,7 @@ defmodule Cache do
       when is_function(fun, 0) and is_integer(ttl) and ttl > 0 and
              is_integer(refresh_interval) and refresh_interval > 0 and
              refresh_interval < ttl do
-    GenServer.call(__MODULE__, {:register_function, fun, key, ttl, refresh_interval})
+    GenServer.call({:global, __MODULE__}, {:register_function, fun, key, ttl, refresh_interval})
     catch
       # Receive :timeout
       :exit, {:timeout, _} ->
@@ -113,7 +113,7 @@ defmodule Cache do
   """
   @spec get(any(), non_neg_integer(), Keyword.t()) :: result
   def get(key, timeout \\ 30_000, _opts \\ []) when is_integer(timeout) and timeout > 0 do
-    GenServer.call(__MODULE__, {:get, key}, timeout)
+    GenServer.call({:global,__MODULE__}, {:get, key}, timeout)
     catch
       # Receive :timeout
       :exit, {:timeout, _} ->
