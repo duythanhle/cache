@@ -34,6 +34,7 @@ defmodule Cache do
                     ttl :: non_neg_integer(),
                     refresh_interval :: non_neg_integer()) :: {atom, pid}
   def start_link(fun, ttl, refresh_interval) do
+    Process.flag(:trap_exit, true)
     GenServer.start_link(__MODULE__, [fun, ttl, refresh_interval])
   end
 
@@ -49,7 +50,8 @@ defmodule Cache do
   # Basic initialization phase for a `start_link/3`.
   @impl true
   def init([fun, ttl, refresh_interval]) do
-    {:ok, %{value: nil, fun: fun, ttl: ttl, refresh_interval: refresh_interval, waiting_result: nil, progress: nil, ttl_ref: nil}}
+    ref = Process.send_after(self(), :timeout, ttl)
+    {:ok, %{value: nil, fun: fun, ttl: ttl, refresh_interval: refresh_interval, waiting_results: [], progress: false, ttl_ref: ref}}
   end
 
   @doc ~s"""
@@ -154,18 +156,16 @@ defmodule Cache do
   # Receive :register signal
   # Start a Task for process `fun`, ttl timer for ttl
   @impl true
-  def handle_call(:register, _from, %{fun: fun, ttl: ttl} = state) do
-    pid = self()
+  def handle_call(:register, _from, %{fun: fun} = state) do
     #IO.puts("#{inspect(pid)} Got register func from #{inspect(from)}")
     Task.async(fun)
-    ref = Process.send_after(pid, :timeout, ttl)
-    {:reply, :ok, %{state | progress: true, ttl_ref: ref}}
+    {:reply, :ok, %{state | progress: true}}
   end
 
   # Receives :get cast message
   # Returns {:error, :not_registered}
   @impl true
-  def handle_cast({:get, from}, %{value: nil, progress: nil} = state) do
+  def handle_cast({:get, from}, %{value: nil, progress: false} = state) do
     GenServer.reply(from, {:error, :not_registered})
     {:noreply, state}
   end
@@ -173,10 +173,10 @@ defmodule Cache do
   # Receives :get cast message
   # Waits for computing value
   @impl true
-  def handle_cast({:get, from},  %{value: nil} = state) do
+  def handle_cast({:get, from},  %{value: nil, waiting_results: list} = state) do
     # wating result
     #IO.puts("Got get func for key #from #{inspect(from)}| wating result")
-    {:noreply, %{state | waiting_result: from}}
+    {:noreply, %{state | waiting_results: [from | list]}}
   end
 
   # Receives :get cast message
@@ -196,39 +196,52 @@ defmodule Cache do
     {:noreply, %{state | progress: true}}
   end
 
-  # Receives return value of Task
-  def handle_info({_ref, result}, %{ttl: ttl, refresh_interval: refresh_interval, ttl_ref: ref} = state) do
+  # Receives return {:ok, value} of Task
+  def handle_info({_ref, {:ok, value} = result}, %{ttl: ttl, refresh_interval: refresh_interval, ttl_ref: ref} = state) do
     #IO.puts("Receive result #{inspect result}")
-    schedule_recompute(refresh_interval)
-    # Checks result of `fun`
-    case result do
-      {:ok, value} ->
-        # Checks waiting process to send result
-        case state.waiting_result do
-          nil ->
-            :ok
-          from ->
-            GenServer.reply(from, result)
-        end
-        # Cancels and restarts ttl_ref
-        Process.cancel_timer(ref)
-        {:noreply, %{state |value: value, progress: nil, waiting_result: nil, ttl_ref: Process.send_after(self(), :timeout, ttl)}}
-      _ ->
-        {:noreply, %{state | progress: nil}}
+    # Checks waiting process to send result
+    case state.waiting_results do
+      [] ->
+        :ok
+      list_waiting_processes ->
+        for from <- Enum.reverse(list_waiting_processes), do: GenServer.reply(from, result)
     end
+    # Cancels and restarts ttl_ref
+    Process.cancel_timer(ref)
+    schedule_recompute(refresh_interval)
+    {:noreply, %{state |value: value, progress: false, waiting_results: [], ttl_ref: Process.send_after(self(), :timeout, ttl)}}
   end
 
-  # Receives DOWN signal of Task
+  # Receives return error value of Task
+  def handle_info({_ref, _result}, %{refresh_interval: refresh_interval} = state) do
+    schedule_recompute(refresh_interval)
+    {:noreply, %{state | progress: false}}
+  end
+
+  # Receives DOWN signal of Task with reason :normal
   def handle_info({:DOWN, _ref, :process, _process, :normal}, state)  do
     #IO.puts("Task down #{inspect process}")
     {:noreply, state}
   end
 
+  # Receives DOWN signal of Task with other reason
+  def handle_info({:DOWN, _ref, :process, _process, _reason}, state)  do
+    {:noreply, state}
+  end
+
   # Receives DOWN signal of Task
   def handle_info(:timeout, state) do
-    #IO.puts("Stopping #{inspect(self())}")
-    Cache.Store.delete(self())
     {:stop, :normal, state}
+  end
+
+  def handle_info(_, state) do
+    {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    Cache.Store.delete(self())
+    state
   end
 
   # Start a periodic timer for `refresh_interval`
@@ -291,6 +304,7 @@ defmodule Cache.Store do
           pid :: pid()
         ) :: :ok
   def delete(pid) do
+    # IO.puts("Deleting #{inspect(pid)}")
     :ets.match_delete(:cache_table, {:_, pid})
     :ok
   end
