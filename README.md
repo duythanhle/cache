@@ -62,10 +62,10 @@ To run test: `mix test`
   thanhle@local cache % mix test                  
   ...............
 
-  Finished in 14.4 seconds (0.00s async, 14.4s sync)
-  15 tests, 0 failures
+  Finished in 13.9 seconds (0.00s async, 13.9s sync)
+  14 tests, 0 failures
 
-  Randomized with seed 305484
+  Randomized with seed 179540
   ```
 
 
